@@ -118,7 +118,7 @@ void loop() {
   }
   delay(2); // Waits 500 Hz, 2ms
 }
-
+//Nathan gay 
 // Function to display title screen
 void displayTitleScreen() {
   display.clearDisplay();
