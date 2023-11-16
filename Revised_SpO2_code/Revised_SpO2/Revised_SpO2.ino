@@ -32,14 +32,14 @@ int periodCount = 0;
 int comIR, comRed, SpO2;
 int periodMarker;
 unsigned long periodHolder = 0.0;
-
+unsigned long currentMillis;
 unsigned long previousMillis = 0.0; 
 bool firstRun;
 double redRMS, IRRMS;
 double redDC = 1.0;
 double IRDC = 1.0;
 double periodTotal;
-float heartRate = 0.0;
+float heartRate = 3.0;
 
 unsigned long periodTimes[10];
 
@@ -102,7 +102,7 @@ double calculateRMS(double maxVal, double minVal) {
 
 int calculateSpO2(int redRMS, int IRRMS, int dcred, int dcir) {
   int R = (IRRMS / DCIR) / (redRMS / DCRed);
-  int SpO2 = 110 - 25 * R;
+  int SpO2 = 110 - (25 * R);
   return SpO2;
 }
 
@@ -128,7 +128,7 @@ void setup() {
   pinMode(ACIR, INPUT);
   pinMode(INTR_PIN_1, INPUT_PULLUP);
   pinMode(INTR_PIN_2, INPUT_PULLUP);
-  Serial.begin(9600);  // Initialize serial communication, this value for speed and reliability
+  Serial.begin(115200);  // Initialize serial communication, this value for speed and reliability
   attachInterrupt(digitalPinToInterrupt(2),ISR_falling, FALLING);
   attachInterrupt(digitalPinToInterrupt(3),ISR_rising, RISING);
 
@@ -151,7 +151,7 @@ void setup() {
 
 void loop() {
   // Need to write function for MUX
-  unsigned long currentMillis = millis();
+  currentMillis = millis();
   //turns on RED led and signal path
 
     tone(RED, 500);
@@ -167,10 +167,9 @@ void loop() {
       minRed = comRed;
     if (comRed > (periodMarker - 0.05) && comRed < (periodMarker + 0.05)){
       periodTimes[periodCount] = millis();
-      Serial.print(millis());      
-      Serial.print("\n");
+      periodCount += 1;
     }
-
+    
     double IRDCtemp = ((double)analogRead(DCIR) / 1024.0 ) * 5.0;
     double comIR = ((double)analogRead(ACIR) / 1024.0) * 5.0;
     IRDC = getAverage(IRDC, IRDCtemp);
@@ -178,10 +177,13 @@ void loop() {
       maxIR = comIR;
     if (comIR < minIR)
       minIR = comIR;
+    
+    
 
     
     double redRMS = calculateRMS(maxRed, minRed);
     double IRRMS = calculateRMS(maxIR, minIR);
+    Serial.println(comRed);    
     int SpO2 = calculateSpO2((int)redRMS, (int)IRRMS, redDC, IRDC);
    //Serial.print(heartRate);
     displayFrequencyAndBPM((float)heartRate, SpO2);
@@ -199,16 +201,14 @@ void loop() {
       int i;
       //Serial.print("inside while loop\n");
       for(i = 1; i <= periodCount; i++){
-        periodHolder += (periodTimes[i] - periodTimes[i -1]);
-        Serial.print(periodTimes[i]);
-        Serial.print(periodTimes[i-1]);
-        Serial.print(periodHolder);
-        Serial.print("\n");
-        periodTotal = (float)periodHolder;
-        Serial.print(periodTotal);
+       // periodHolder += (periodTimes[i] - periodTimes[i -1]);
+        periodTotal =  (periodTimes[i] - periodTimes[i-1]);
         periodTimes[i -1] = 0.0;
       }
-      heartRate =  60.0 * (1.0/ (( periodTotal / periodCount )/1000.0));
+     // Serial.print(periodTotal);
+      heartRate =  60.0 * (1.0/ (( periodTotal )/1000.0));
+     // Serial.print(heartRate);
+    //  Serial.print("\n");
     }
     periodTimes[periodCount] = 0.0;
     periodCount = 0;
