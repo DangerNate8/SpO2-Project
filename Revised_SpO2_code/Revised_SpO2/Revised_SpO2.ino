@@ -14,24 +14,40 @@
 #define INHIBIT 10
 #define RED 7
 #define INFRARED 6
-#define ACRed A1
-#define ACIR A2
-#define DCRed 3
-#define DCIR 2
+#define ACRed A0
+#define ACIR A1
+#define DCRed A2
+#define DCIR A3
 
 Adafruit_SSD1306 display(OLED_RESET);
 
 int count = 0;
 
-unsigned long lastPeakTime = 0;
+int maxRed = 0;
+int minRed = 100000;
+int maxIR = 0;
+int minIR = 1000000;
+int periodCount = 0;
+int comIR, comRed, SpO2;
+int periodMarker;
+unsigned long periodHolder = 0.0;
+
+unsigned long previousMillis = 0.0; 
+bool firstRun;
+double redRMS, IRRMS;
+double redDC = 1.0;
+double IRDC = 1.0;
+
+double heartRate = 0.0;
+
+unsigned long peroidTimes[10];
 
 void setup() {
   pinMode(INHIBIT, OUTPUT);
   pinMode(CONTROL_PINA, OUTPUT);
   pinMode(CONTROL_PINB, OUTPUT);
   pinMode(INFRARED, OUTPUT);
-  pinMode(RED, OUTPUT);
-
+  pinMode(RED, OUTPUT);  
   Serial.begin(115200);  // Initialize serial communication, this value for speed and reliability
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -43,58 +59,81 @@ void setup() {
   display.clearDisplay();  // Clears OLED screen
   displayTitleScreen();
   delay(5000);
+
+  digitalWrite(INHIBIT, LOW);
+  firstRun = true;
+
 }
 
 void loop() {
   // Need to write function for MUX
-  int valueRed = analogRead(ACRed);  // Reads A1
-  int valueIR = analogRead(ACIR);    // Reads A2
-  int valuered = digitalRead(DCRed);
-  int valueir = digitalRead(DCIR);
-
-  if (count % 2 == 0) {
-    digitalWrite(INHIBIT, LOW);
+  unsigned long currentMillis = millis();
+  //turns on RED led and signal path
     digitalWrite(CONTROL_PINA, LOW);
     digitalWrite(CONTROL_PINB, HIGH);
     digitalWrite(RED, HIGH);
     digitalWrite(INFRARED, LOW);
-  } 
-  else {
-    digitalWrite(CONTROL_PINA, HIGH);
-    digitalWrite(CONTROL_PINB, LOW);
-    digitalWrite(RED, LOW);
-    digitalWrite(INFRARED, HIGH);
-  }
+    delay(1);
 
-  unsigned long currentCrossingTime = micros();
 
-  if (currentCrossingTime > 0) {
-    int comRed = analogRead(A1);
-    int maxRed = 0;
-    int minRed = 100000;
-    int comIR = analogRead(A2);
-    int maxIR = 0;
-    int minIR = 1000000;
-
+    int redDCtemp = analogRead(ACRed);  // Reads A1
+    int comRed = analogRead(ACRed);
+    redDC = getAverage(redDC, redDCtemp);
     if (comRed > maxRed)
       maxRed = comRed;
     if (comRed < minRed)
       minRed = comRed;
+    if (comRed == periodMarker){
+      periodTimes[peroidCount] = millis();
+    }
+
+
+    digitalWrite(CONTROL_PINA, HIGH);
+    digitalWrite(CONTROL_PINB, LOW);
+    digitalWrite(RED, LOW);
+    digitalWrite(INFRARED, HIGH);
+    delay(1);
+
+    int IRDCtemp = analogRead(DCIR);
+    int comIR = analogRead(ACIR);
+    IRDC = getAverage(IRDC, IRDCtemp);
     if (comIR > maxIR)
       maxIR = comIR;
     if (comIR < minIR)
       minIR = comIR;
 
-    float heartRate = calculateHeartRate(&lastPeakTime);
-    float redRMS = calculateRMS(maxRed, minRed);
-    float IRRMS = calculateRMS(maxIR, minIR);
-    int SpO2 = calculateSpO2(redRMS, IRRMS, valuered, valueir);
+    
+    double redRMS = calculateRMS(maxRed, minRed);
+    double IRRMS = calculateRMS(maxIR, minIR);
+    int SpO2 = calculateSpO2((int)redRMS, (int)IRRMS, redDC, IRDC);
 
     displayFrequencyAndBPM(heartRate, SpO2);
-  }
 
-  count++;
-  delay(2);
+  if(currentMillis - previousMillis >= 2000){
+    previousMillis = currentMillis;
+    maxIR = 0;
+    minIR = 0;
+    minRed = 0;
+    maxRed = 0;
+    redDC = 0;
+    IRDC = 0;
+    periodMarker = comRed;
+    if (firstRun = false){
+      int i;
+      for(i = 1, i <= periodCount, i++){}
+        periodHolder += (periodTimes[i] - periodTimes[i -1]);
+        double periodTotal = (double)periodHolder;
+        periodTimes[i -1] = 0.0;
+      }
+      heartRate =  60.0 * (1.0/ ( (double)( periodTotal / (i -1))));
+    }
+    periodTimes[periodCount] = 0.0;
+    periodCount = 0;
+    periodHolder = 0.0;
+    firstRun = false;
+    }
+
+
 }
 // Function to display title screen
 void displayTitleScreen() {
@@ -143,30 +182,34 @@ void displayFrequencyAndBPM(float bpm, int SpO2) {
   display.display();  // Refresh the OLED screen to show the updated values
 }
 
-float calculateHeartRate(unsigned long* lastPeakTime) {
-  unsigned long currentTime = millis();
-  if (*lastPeakTime == 0) {
-    *lastPeakTime = currentTime;  // Initialize lastPeakTime on the first call
-    return 0;
-  }
-
-  unsigned long period = currentTime - *lastPeakTime;
-
-  if (period == 0)
-    return 0;
-
-  float frequency = 1000000.0 / period;  // Calculate frequency from the period
-  float heartRate = frequency * 60;      // Convert the frequency to BPM (Beats Per Minute)
-  return heartRate;
+float getAverage( double runningTotal, double newVal} {
+  return (runningTotal + newVal) / 2;
 }
 
-float calculateRMS(int maxVal, int minVal) {
+// float calculateHeartRate(unsigned long* lastPeakTime) {
+//   unsigned long currentTime = millis();
+//   if (*lastPeakTime == 0) {
+//     *lastPeakTime = currentTime;  // Initialize lastPeakTime on the first call
+//     return 0;
+//   }
+
+//   unsigned long period = currentTime - *lastPeakTime;
+
+//   if (period == 0)
+//     return 0;
+
+//   float frequency = 1000000.0 / period;  // Calculate frequency from the period
+//   float heartRate = frequency * 60;      // Convert the frequency to BPM (Beats Per Minute)
+//   return heartRate;
+// }
+
+double calculateRMS(double maxVal, double minVal) {
   double avg = (maxVal - minVal) / 2.0;
   return avg / sqrt(2);
 }
 
-int calculateSpO2(float redRMS, float IRRMS, int dcred, int dcir) {
-  float R = (IRRMS / DCIR) / (redRMS / DCRed);
+int calculateSpO2(int redRMS, int IRRMS, int dcred, int dcir) {
+  int R = (IRRMS / DCIR) / (redRMS / DCRed);
   int SpO2 = 110 - 25 * R;
   return SpO2;
 }
