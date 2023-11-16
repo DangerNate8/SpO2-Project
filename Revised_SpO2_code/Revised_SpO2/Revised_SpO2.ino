@@ -18,7 +18,8 @@
 #define ACIR A1
 #define DCRed A2
 #define DCIR A3
-
+#define INTR_PIN_1 2
+#define INTR_PIN_2 3
 Adafruit_SSD1306 display(OLED_RESET);
 
 
@@ -94,23 +95,6 @@ float getAverage(double runningTotal, double newVal) {
   return (runningTotal + newVal) / 2;
 }
 
-// float calculateHeartRate(unsigned long* lastPeakTime) {
-//   unsigned long currentTime = millis();
-//   if (*lastPeakTime == 0) {
-//     *lastPeakTime = currentTime;  // Initialize lastPeakTime on the first call
-//     return 0;
-//   }
-
-//   unsigned long period = currentTime - *lastPeakTime;
-
-//   if (period == 0)
-//     return 0;
-
-//   float frequency = 1000000.0 / period;  // Calculate frequency from the period
-//   float heartRate = frequency * 60;      // Convert the frequency to BPM (Beats Per Minute)
-//   return heartRate;
-// }
-
 double calculateRMS(double maxVal, double minVal) {
   double avg = (maxVal - minVal) / 2.0;
   return avg / sqrt(2);
@@ -129,7 +113,13 @@ void setup() {
   pinMode(CONTROL_PINB, OUTPUT);
   pinMode(INFRARED, OUTPUT);
   pinMode(RED, OUTPUT);  
+  pinMode(ACRed,INPUT );
+  pinMode(ACIR, INPUT);
+  pinMode(INTR_PIN_1, INPUT_PULLUP);
+  pinMode(INTR_PIN_2, INPUT_PULLUP);
   Serial.begin(115200);  // Initialize serial communication, this value for speed and reliability
+  attachInterrupt(digitalPinToInterrupt(2),ISR_falling, FALLING);
+  attachInterrupt(digitalPinToInterrupt(3),ISR_rising, RISING);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
@@ -150,14 +140,10 @@ void loop() {
   // Need to write function for MUX
   unsigned long currentMillis = millis();
   //turns on RED led and signal path
-    digitalWrite(CONTROL_PINA, LOW);
-    digitalWrite(CONTROL_PINB, HIGH);
-    digitalWrite(RED, HIGH);
-    digitalWrite(INFRARED, LOW);
-    delay(1);
 
+    tone(RED, 500);
 
-    int redDCtemp = analogRead(ACRed);  // Reads A1
+    int redDCtemp = analogRead(DCRed);  // Reads A1
     int comRed = analogRead(ACRed);
     redDC = getAverage(redDC, redDCtemp);
     if (comRed > maxRed)
@@ -167,13 +153,6 @@ void loop() {
     if (comRed == periodMarker){
       periodTimes[periodCount] = millis();
     }
-
-
-    digitalWrite(CONTROL_PINA, HIGH);
-    digitalWrite(CONTROL_PINB, LOW);
-    digitalWrite(RED, LOW);
-    digitalWrite(INFRARED, HIGH);
-    delay(1);
 
     int IRDCtemp = analogRead(DCIR);
     int comIR = analogRead(ACIR);
@@ -188,7 +167,7 @@ void loop() {
     double IRRMS = calculateRMS(maxIR, minIR);
     int SpO2 = calculateSpO2((int)redRMS, (int)IRRMS, redDC, IRDC);
 
-    displayFrequencyAndBPM(heartRate, SpO2);
+    displayFrequencyAndBPM((float)heartRate, SpO2);
 
   if(currentMillis - previousMillis >= 2000){
     previousMillis = currentMillis;
@@ -215,3 +194,14 @@ void loop() {
     firstRun = false;
 }
 
+void ISR_falling(){
+    digitalWrite(CONTROL_PINA, HIGH);
+    digitalWrite(CONTROL_PINB, LOW);
+    digitalWrite(INFRARED, HIGH);
+}
+
+void ISR_rising(){
+    digitalWrite(CONTROL_PINA, LOW);
+    digitalWrite(CONTROL_PINB, HIGH);
+    digitalWrite(INFRARED, LOW);
+}
