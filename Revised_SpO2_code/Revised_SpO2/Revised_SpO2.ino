@@ -39,7 +39,7 @@ double redRMS, IRRMS;
 double redDC = 1.0;
 double IRDC = 1.0;
 double periodTotal;
-double heartRate = 0.0;
+float heartRate = 0.0;
 
 unsigned long periodTimes[10];
 
@@ -106,6 +106,17 @@ int calculateSpO2(int redRMS, int IRRMS, int dcred, int dcir) {
   return SpO2;
 }
 
+void ISR_falling(){
+    digitalWrite(CONTROL_PINA, HIGH);
+    digitalWrite(CONTROL_PINB, LOW);
+    digitalWrite(INFRARED, HIGH);
+}
+
+void ISR_rising(){
+    digitalWrite(CONTROL_PINA, LOW);
+    digitalWrite(CONTROL_PINB, HIGH);
+    digitalWrite(INFRARED, LOW);
+}
 
 void setup() {
   pinMode(INHIBIT, OUTPUT);
@@ -117,7 +128,7 @@ void setup() {
   pinMode(ACIR, INPUT);
   pinMode(INTR_PIN_1, INPUT_PULLUP);
   pinMode(INTR_PIN_2, INPUT_PULLUP);
-  Serial.begin(115200);  // Initialize serial communication, this value for speed and reliability
+  Serial.begin(9600);  // Initialize serial communication, this value for speed and reliability
   attachInterrupt(digitalPinToInterrupt(2),ISR_falling, FALLING);
   attachInterrupt(digitalPinToInterrupt(3),ISR_rising, RISING);
 
@@ -136,6 +147,8 @@ void setup() {
 
 }
 
+
+
 void loop() {
   // Need to write function for MUX
   unsigned long currentMillis = millis();
@@ -143,19 +156,23 @@ void loop() {
 
     tone(RED, 500);
 
-    int redDCtemp = analogRead(DCRed);  // Reads A1
-    int comRed = analogRead(ACRed);
+    double redDCtemp = ((double)analogRead(DCRed) / 1024) * 5;  // Reads A1
+    double comRed = ((double)analogRead(ACRed) / 1024) * 5 ;
+   // Serial.print(comRed);
+    
     redDC = getAverage(redDC, redDCtemp);
     if (comRed > maxRed)
       maxRed = comRed;
     if (comRed < minRed)
       minRed = comRed;
-    if (comRed == periodMarker){
+    if (comRed > (periodMarker - 0.05) && comRed < (periodMarker + 0.05)){
       periodTimes[periodCount] = millis();
+      Serial.print(millis());      
+      Serial.print("\n");
     }
 
-    int IRDCtemp = analogRead(DCIR);
-    int comIR = analogRead(ACIR);
+    double IRDCtemp = ((double)analogRead(DCIR) / 1024.0 ) * 5.0;
+    double comIR = ((double)analogRead(ACIR) / 1024.0) * 5.0;
     IRDC = getAverage(IRDC, IRDCtemp);
     if (comIR > maxIR)
       maxIR = comIR;
@@ -166,10 +183,10 @@ void loop() {
     double redRMS = calculateRMS(maxRed, minRed);
     double IRRMS = calculateRMS(maxIR, minIR);
     int SpO2 = calculateSpO2((int)redRMS, (int)IRRMS, redDC, IRDC);
-
+   //Serial.print(heartRate);
     displayFrequencyAndBPM((float)heartRate, SpO2);
-
-  if(currentMillis - previousMillis >= 2000){
+  
+  if(currentMillis - previousMillis >= 5000){
     previousMillis = currentMillis;
     maxIR = 0;
     minIR = 0;
@@ -178,30 +195,25 @@ void loop() {
     redDC = 0;
     IRDC = 0;
     periodMarker = comRed;
-    if (firstRun = false){
+    if (firstRun == false){
       int i;
-      
-      for(i = 1; i <= periodCount; i++){}
+      //Serial.print("inside while loop\n");
+      for(i = 1; i <= periodCount; i++){
         periodHolder += (periodTimes[i] - periodTimes[i -1]);
-        periodTotal = (double)periodHolder;
+        Serial.print(periodTimes[i]);
+        Serial.print(periodTimes[i-1]);
+        Serial.print(periodHolder);
+        Serial.print("\n");
+        periodTotal = (float)periodHolder;
+        Serial.print(periodTotal);
         periodTimes[i -1] = 0.0;
       }
-      heartRate =  60.0 * (1.0/ ( (double)( periodTotal / periodCount )));
+      heartRate =  60.0 * (1.0/ (( periodTotal / periodCount )/1000.0));
     }
     periodTimes[periodCount] = 0.0;
     periodCount = 0;
     periodHolder = 0.0;
     firstRun = false;
+  }
 }
 
-void ISR_falling(){
-    digitalWrite(CONTROL_PINA, HIGH);
-    digitalWrite(CONTROL_PINB, LOW);
-    digitalWrite(INFRARED, HIGH);
-}
-
-void ISR_rising(){
-    digitalWrite(CONTROL_PINA, LOW);
-    digitalWrite(CONTROL_PINB, HIGH);
-    digitalWrite(INFRARED, LOW);
-}
